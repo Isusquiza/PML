@@ -1,0 +1,272 @@
+Project: Final Report of Practical Machine Learning
+Edgar Enrique Isusquiza Martinez , february 2017
+
+Project introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+Data
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+Goal
+The goal of your project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+Reproducibility
+In order to reproduce the same results, you need a certain set of packages, as well as setting a pseudo random seed equal to the one I used in this project.
+
+The following Libraries were used, which you should install - if not done yet - and load on your working environment.
+
+library(caret)
+## Warning: package 'caret' was built under R version 3.3.2
+## Loading required package: lattice
+## Loading required package: ggplot2
+library(lattice)
+library(ggplot2)
+library(randomForest)
+## Warning: package 'randomForest' was built under R version 3.3.2
+## randomForest 4.6-12
+## Type rfNews() to see new features/changes/bug fixes.
+## 
+## Attaching package: 'randomForest'
+## The following object is masked from 'package:ggplot2':
+## 
+##     margin
+library(rpart.plot)
+## Warning: package 'rpart.plot' was built under R version 3.3.2
+## Loading required package: rpart
+library(RColorBrewer)
+library(rattle)
+## Warning: package 'rattle' was built under R version 3.3.2
+## Rattle: A free graphical interface for data mining with R.
+## Versión 4.1.0 Copyright (c) 2006-2015 Togaware Pty Ltd.
+## Escriba 'rattle()' para agitar, sacudir y  rotar sus datos.
+library(corrplot)
+## Warning: package 'corrplot' was built under R version 3.3.2
+After that, we load the same seed with the following instruction:
+
+set.seed(12343)
+Load and Read Data
+As first step of the project, I load the database from a given URL and therefore I built two dataframes: 1) training, and 2) testing, with his respective dimensions to know the size and variables from that dataframes.
+
+fileURL_training <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileURL_testing <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(fileURL_training), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(fileURL_testing), na.strings=c("NA","#DIV/0!",""))
+
+dim(training);dim(testing)
+## [1] 19622   160
+## [1]  20 160
+We observe that training dataframe have 19,622 observations with 160 variables and testing 20 observations with same number of variables.
+
+Cleaning Data
+In this part, I clean the data under three process, 1) remove NearZeroVariance variables, 2) remove some columns that do not contribute much to the accelerometer and 3) remove columns that contain NA’s.
+
+#1. Near Zero Var
+NZV <- nearZeroVar(training, saveMetrics = TRUE)
+#head(NZV, 20)
+training01 <- training[, !NZV$nzv]
+testing01 <- testing[, !NZV$nzv]
+dim(training01); dim(testing01)
+## [1] 19622   124
+## [1]  20 124
+#2.Remove some columns that do not contribute much to the accelerometer 
+regex <- grepl("^X|timestamp|user_name", names(training01))
+training <- training01[, !regex]
+testing <- testing01[, !regex]
+dim(training); dim(testing)
+## [1] 19622   119
+## [1]  20 119
+#3.Removing columns that contain NA's.
+cond <- (colSums(is.na(training)) == 0)
+training <- training[, cond]
+testing <- testing[, cond]
+dim(training); dim(testing)
+## [1] 19622    54
+## [1] 20 54
+After the cleaning the data, I analyze the correlations between in all variables in the training dataframe.
+
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+
+
+Parting de training into 2 dataframes
+Once that we have doing the getting and cleaning data, I divide the data set in 2 dataframe, one to do the training process and the second to do testing process. Partioning Training data set into two data sets, 80% for myTraining, 20% for myTesting.
+
+set.seed(58749)
+inTrain <- createDataPartition(training$classe, p=0.8, list=FALSE)
+myTraining <- training[inTrain, ]
+myTesting <- training[-inTrain, ]
+dim(myTraining); dim(myTesting)
+## [1] 15699    54
+## [1] 3923   54
+Data Modeling
+Decision tree
+The first model to estimate was the decision tree.
+
+modelTree <- rpart(classe ~ ., data=myTraining, method="class")
+fancyRpartPlot(modelTree)
+
+
+We estimate the performance of the model
+predictTree <- predict(modelTree, myTesting, type = "class")
+confusionMatrix(myTesting$classe, predictTree)
+## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1005   29    6   63   13
+##          B  165  423   43   79   49
+##          C   38   20  554   33   39
+##          D   63   11   92  414   63
+##          E   38   12   49   96  526
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.7448          
+##                  95% CI : (0.7309, 0.7584)
+##     No Information Rate : 0.3337          
+##     P-Value [Acc > NIR] : < 2.2e-16       
+##                                           
+##                   Kappa : 0.6756          
+##  Mcnemar's Test P-Value : < 2.2e-16       
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.7678   0.8545   0.7446   0.6044   0.7623
+## Specificity            0.9575   0.9020   0.9591   0.9293   0.9397
+## Pos Pred Value         0.9005   0.5573   0.8099   0.6439   0.7295
+## Neg Pred Value         0.8917   0.9772   0.9413   0.9174   0.9488
+## Prevalence             0.3337   0.1262   0.1897   0.1746   0.1759
+## Detection Rate         0.2562   0.1078   0.1412   0.1055   0.1341
+## Detection Prevalence   0.2845   0.1935   0.1744   0.1639   0.1838
+## Balanced Accuracy      0.8626   0.8783   0.8519   0.7668   0.8510
+accuracyTree <- postResample(predictTree, myTesting$classe)
+errorTree <- 1 - as.numeric(confusionMatrix(myTesting$classe, predictTree)$overall[1])
+The perfomance of this model can be viewed by accuracy with a result of 0.7448381, 0.6756362 and the error was 0.2551619.
+
+Random Forest
+set.seed(1234)
+modelRF <- randomForest(classe ~ ., data=myTraining)
+We estimate the performance of the model
+predictionRF <- predict(modelRF, myTesting, type = "class")
+cmrf <- confusionMatrix(predictionRF, myTesting$classe)
+cmrf
+## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1116    0    0    0    0
+##          B    0  759    0    0    0
+##          C    0    0  684    8    0
+##          D    0    0    0  635    0
+##          E    0    0    0    0  721
+## 
+## Overall Statistics
+##                                          
+##                Accuracy : 0.998          
+##                  95% CI : (0.996, 0.9991)
+##     No Information Rate : 0.2845         
+##     P-Value [Acc > NIR] : < 2.2e-16      
+##                                          
+##                   Kappa : 0.9974         
+##  Mcnemar's Test P-Value : NA             
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            1.0000   1.0000   1.0000   0.9876   1.0000
+## Specificity            1.0000   1.0000   0.9975   1.0000   1.0000
+## Pos Pred Value         1.0000   1.0000   0.9884   1.0000   1.0000
+## Neg Pred Value         1.0000   1.0000   1.0000   0.9976   1.0000
+## Prevalence             0.2845   0.1935   0.1744   0.1639   0.1838
+## Detection Rate         0.2845   0.1935   0.1744   0.1619   0.1838
+## Detection Prevalence   0.2845   0.1935   0.1764   0.1619   0.1838
+## Balanced Accuracy      1.0000   1.0000   0.9988   0.9938   1.0000
+accuracyRF <- postResample(predictionRF, myTesting$classe)
+errorRF <- 1 - as.numeric(confusionMatrix(myTesting$classe, predictionRF)$overall[1])
+The perfomance of model Random Forest can be viewed by accuracy with a result of 0.9979607, 0.9974205 and the error was 0.0020393
+
+Plot the random forest
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+
+
+Prediction with Generalized Boosted Regression.
+set.seed(12345)
+fitControl <- trainControl(method = "repeatedcv", number = 5,repeats = 1)
+gbmModel <- train(classe ~ ., data=myTraining, method = "gbm", trControl = fitControl, verbose = FALSE)
+## Loading required package: gbm
+## Warning: package 'gbm' was built under R version 3.3.2
+## Loading required package: survival
+## Warning: package 'survival' was built under R version 3.3.2
+## 
+## Attaching package: 'survival'
+## The following object is masked from 'package:caret':
+## 
+##     cluster
+## Loading required package: splines
+## Loading required package: parallel
+## Loaded gbm 2.1.1
+## Loading required package: plyr
+modelGBM <- gbmModel$finalModel
+predictionGBM <- predict(gbmModel, newdata=myTesting)
+confusionMatrix(predictionGBM, myTesting$classe)
+## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1114    7    0    0    0
+##          B    1  747    1    0    2
+##          C    0    5  681   12    0
+##          D    1    0    2  631    5
+##          E    0    0    0    0  714
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.9908          
+##                  95% CI : (0.9873, 0.9936)
+##     No Information Rate : 0.2845          
+##     P-Value [Acc > NIR] : < 2.2e-16       
+##                                           
+##                   Kappa : 0.9884          
+##  Mcnemar's Test P-Value : NA              
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.9982   0.9842   0.9956   0.9813   0.9903
+## Specificity            0.9975   0.9987   0.9948   0.9976   1.0000
+## Pos Pred Value         0.9938   0.9947   0.9756   0.9875   1.0000
+## Neg Pred Value         0.9993   0.9962   0.9991   0.9963   0.9978
+## Prevalence             0.2845   0.1935   0.1744   0.1639   0.1838
+## Detection Rate         0.2840   0.1904   0.1736   0.1608   0.1820
+## Detection Prevalence   0.2858   0.1914   0.1779   0.1629   0.1820
+## Balanced Accuracy      0.9979   0.9915   0.9952   0.9894   0.9951
+accuracyGBM <- postResample(predictionGBM, myTesting$classe)
+errorGBM <- 1 - as.numeric(confusionMatrix(myTesting$classe, predictionGBM)$overall[1])
+Predicting The Manner of Exercise.
+Finally, to get the classification estimated of 20 data contained in test data set original, I estimate the classification with Random Forest model.
+
+prediction_final <- predict(modelRF, testing[, -length(names(testing))])
+predict(modelRF, testing, type = "class")
+##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E
+Here I present the function to generate files with predictions to submit for assignment.
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id",i,".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, col.names = FALSE)
+  }
+}
+
+pml_write_files(prediction_final)
