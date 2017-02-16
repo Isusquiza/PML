@@ -1,0 +1,181 @@
+---
+title: "Project: Final Report of Practical Machine Learning"
+output: html_document
+---
+*Edgar Enrique Isusquiza Martinez*
+*, february 2017*
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Project introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data 
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+##Goal 
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+##Reproducibility
+In order to reproduce the same results, you need a certain set of packages, as well as setting a pseudo random seed equal to the one I used in this project. 
+
+The following Libraries were used, which you should install - if not done yet - and load on your working environment.
+
+```{r libraries}
+library(caret)
+library(lattice)
+library(ggplot2)
+library(randomForest)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(corrplot)
+```
+
+After that, we load the same seed with the following instruction:
+```{r setseed}
+set.seed(12343)
+```
+
+## Load and Read Data
+
+As first step of the project, I load the database from a given URL and therefore I built two dataframes: 1) training, and 2) testing, with his respective dimensions to know the size and variables from that dataframes.  
+
+
+```{r load_read, echo=TRUE}
+fileURL_training <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileURL_testing <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(fileURL_training), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(fileURL_testing), na.strings=c("NA","#DIV/0!",""))
+
+dim(training);dim(testing)
+```
+
+We observe that training dataframe have 19,622 observations with 160 variables and testing 20 observations with same number of variables.
+
+## Cleaning Data
+In this part, I clean the data under three process, 1) remove NearZeroVariance variables, 2) remove some columns that do not contribute much to the accelerometer and 3) remove columns that contain NA's.
+
+```{r cleaning_data}
+#1. Near Zero Var
+NZV <- nearZeroVar(training, saveMetrics = TRUE)
+#head(NZV, 20)
+training01 <- training[, !NZV$nzv]
+testing01 <- testing[, !NZV$nzv]
+dim(training01); dim(testing01)
+
+#2.Remove some columns that do not contribute much to the accelerometer 
+regex <- grepl("^X|timestamp|user_name", names(training01))
+training <- training01[, !regex]
+testing <- testing01[, !regex]
+dim(training); dim(testing)
+
+#3.Removing columns that contain NA's.
+cond <- (colSums(is.na(training)) == 0)
+training <- training[, cond]
+testing <- testing[, cond]
+dim(training); dim(testing)
+```
+
+After the cleaning the data, I analyze the correlations between in all variables in the training dataframe.
+```{r correlations}
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+```
+
+##Parting de training into 2 dataframes
+Once that we have doing the getting and cleaning data, I divide the data set in 2 dataframe, one to do the training process and the second to do testing process. Partioning Training data set into two data sets, 80% for myTraining, 20% for myTesting.
+
+```{r parting}
+set.seed(58749)
+inTrain <- createDataPartition(training$classe, p=0.8, list=FALSE)
+myTraining <- training[inTrain, ]
+myTesting <- training[-inTrain, ]
+dim(myTraining); dim(myTesting)
+```
+
+##Data Modeling
+##Decision tree
+The first model to estimate was the decision tree.  
+```{r modeltree}
+modelTree <- rpart(classe ~ ., data=myTraining, method="class")
+fancyRpartPlot(modelTree)
+```
+
+##We estimate the performance of the model
+```{r permonce_treemodel}
+predictTree <- predict(modelTree, myTesting, type = "class")
+confusionMatrix(myTesting$classe, predictTree)
+accuracyTree <- postResample(predictTree, myTesting$classe)
+errorTree <- 1 - as.numeric(confusionMatrix(myTesting$classe, predictTree)$overall[1])
+```
+
+The perfomance of this model can be viewed by accuracy with a result of `r accuracyTree` and the error was `r errorTree`.
+
+
+##Random Forest
+```{r randomforest}
+set.seed(1234)
+modelRF <- randomForest(classe ~ ., data=myTraining)
+```
+
+##We estimate the performance of the model
+```{r perfomance_model_rf}
+predictionRF <- predict(modelRF, myTesting, type = "class")
+cmrf <- confusionMatrix(predictionRF, myTesting$classe)
+cmrf
+accuracyRF <- postResample(predictionRF, myTesting$classe)
+errorRF <- 1 - as.numeric(confusionMatrix(myTesting$classe, predictionRF)$overall[1])
+```
+
+The perfomance of model  Random Forest can be viewed by accuracy with a result of `r accuracyRF` and the error was `r errorRF`
+
+##Plot the random forest
+```{r plot_rf}
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+```
+
+##Prediction with Generalized Boosted Regression.
+```{r RBG}
+set.seed(12345)
+fitControl <- trainControl(method = "repeatedcv", number = 5,repeats = 1)
+gbmModel <- train(classe ~ ., data=myTraining, method = "gbm", trControl = fitControl, verbose = FALSE)
+modelGBM <- gbmModel$finalModel
+predictionGBM <- predict(gbmModel, newdata=myTesting)
+confusionMatrix(predictionGBM, myTesting$classe)
+accuracyGBM <- postResample(predictionGBM, myTesting$classe)
+errorGBM <- 1 - as.numeric(confusionMatrix(myTesting$classe, predictionGBM)$overall[1])
+```
+
+##Predicting The Manner of Exercise. 
+Finally, to get the classification estimated of 20 data contained in test data set original, I estimate the classification with Random Forest model. 
+```{r final_prediction}
+prediction_final <- predict(modelRF, testing[, -length(names(testing))])
+predict(modelRF, testing, type = "class")
+```
+
+Here I present the function to generate files with predictions to submit for assignment.
+
+```{r files_submit}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id",i,".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, col.names = FALSE)
+  }
+}
+
+pml_write_files(prediction_final)
+```
+
+
